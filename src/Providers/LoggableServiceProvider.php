@@ -52,22 +52,22 @@ class LoggableServiceProvider extends ServiceProvider
     public function boot()
     {
         if ($this->app->runningInConsole()) {
-            // Publish our config
             $this->publishes([
                 __DIR__ . '/../../config/loggable.php' => config_path('loggable.php'),
             ], 'loggable-config');
 
-            // Publish Spatie's activity log config
-            $this->publishes([
-                __DIR__.'/../../vendor/spatie/laravel-activitylog/config/activitylog.php' =>
-                config_path('activitylog.php'),
-            ], 'activitylog-config');
+            // Make sure spatie/laravel-activitylog is installed
+            if (class_exists(\Spatie\Activitylog\ActivitylogServiceProvider::class)) {
+                $this->publishes([
+                    base_path('vendor/spatie/laravel-activitylog/config/activitylog.php') => config_path('activitylog.php'),
+                ], 'activitylog-config');
 
-            // Publish Spatie's activity log migrations
-            $this->publishes([
-                __DIR__.'/../../vendor/spatie/laravel-activitylog/database/migrations/create_activity_log_table.php.stub' =>
-                database_path('migrations/' . date('Y_m_d_His') . '_create_activity_log_table.php'),
-            ], 'activitylog-migrations');
+                if (! class_exists('CreateActivityLogTable')) {
+                    $this->publishes([
+                        base_path('vendor/spatie/laravel-activitylog/database/migrations/create_activity_log_table.php.stub') => database_path('migrations/' . date('Y_m_d_His', time()) . '_create_activity_log_table.php'),
+                    ], 'activitylog-migrations');
+                }
+            }
         }
     }
 }
