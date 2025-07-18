@@ -99,12 +99,39 @@ trait Loggable
         $this->limitLargeAttributes($oldLogAttributes);
         $this->limitLargeAttributes($logAttributes);
 
+        // Process the attributes with custom tap activity and translations
         $this->customTapActivity($activity, $oldLogAttributes, $logAttributes);
 
+        // Map attributes to their human-readable labels
         $mappedOldLogAttributes = $this->mapLogAttributes($oldLogAttributes);
         $mappedLogAttributes = $this->mapLogAttributes($logAttributes);
 
-        if (empty($mappedOldLogAttributes) && empty($mappedLogAttributes)) {
+        // Check if there are actual changes between old and new values
+        $hasChanges = false;
+        foreach ($mappedLogAttributes as $key => $value) {
+            // If this key doesn't exist in old attributes, it's a new field
+            if (!isset($mappedOldLogAttributes[$key])) {
+                $hasChanges = true;
+                break;
+            }
+
+            // If the values are different, there's a change
+            if ($mappedOldLogAttributes[$key] !== $value) {
+                $hasChanges = true;
+                break;
+            }
+        }
+
+        // Check for removed fields
+        foreach ($mappedOldLogAttributes as $key => $value) {
+            if (!isset($mappedLogAttributes[$key])) {
+                $hasChanges = true;
+                break;
+            }
+        }
+
+        // If there are no changes or both arrays are empty, delete the activity
+        if (!$hasChanges || (empty($mappedOldLogAttributes) && empty($mappedLogAttributes))) {
             $activity->delete();
 
             return;
