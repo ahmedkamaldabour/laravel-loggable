@@ -313,8 +313,89 @@ trait Loggable
      */
     protected function customTapActivity(Activity $activity, array &$oldLogAttributes, array &$logAttributes): void
     {
+        // Handle translatable fields automatically if detected
+        if (property_exists($this, 'translatable') && is_array($this->translatable)) {
+            $this->processTranslatableFields($oldLogAttributes, $logAttributes);
+        }
+
+        // Call model-specific customization if exists
         if (method_exists($this, 'modelCustomTapActivity')) {
             $this->modelCustomTapActivity($activity, $oldLogAttributes, $logAttributes);
+        }
+    }
+
+    /**
+     * Process translatable fields to expand them into individual language entries.
+     * This method handles the internal processing so users don't need to implement
+     * their own modelCustomTapActivity method for basic translatable support.
+     *
+     * @param array &$oldAttributes
+     * @param array &$newAttributes
+     * @return void
+     */
+    protected function processTranslatableFields(array &$oldAttributes, array &$newAttributes): void
+    {
+        foreach ($this->translatable as $field) {
+            // Process old attributes if the field exists there
+            if (isset($oldAttributes[$field])) {
+                $this->expandTranslatableField($field, $oldAttributes);
+            }
+
+            // Process new attributes if the field exists there
+            if (isset($newAttributes[$field])) {
+                $this->expandTranslatableField($field, $newAttributes);
+            }
+        }
+    }
+
+    /**
+     * Expand a single translatable field into individual language entries.
+     * This handles both JSON strings and already decoded arrays.
+     *
+     * @param string $field
+     * @param array &$attributes
+     * @return void
+     */
+    protected function expandTranslatableField(string $field, array &$attributes): void
+    {
+        $value = $attributes[$field];
+        $translations = [];
+
+        // If it's a JSON string, decode it
+        if (is_string($value) && $this->isJson($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                $translations = $decoded;
+            }
+        }
+        // If it's already an array, use it directly
+        elseif (is_array($value)) {
+            $translations = $value;
+        }
+        // Otherwise try to get translations from the model
+        else {
+            try {
+                // This uses the HasTranslations trait's method if available
+                if (method_exists($this, 'getTranslations')) {
+                    // Only call getTranslations if the field exists in the current model
+                    if (isset($this->attributes[$field])) {
+                        $translations = $this->getTranslations($field);
+                    }
+                }
+            } catch (\Exception $e) {
+                // If there's an error getting translations, just use the original value
+                $translations = [];
+            }
+        }
+
+        // Add individual language entries if we have translations
+        if (!empty($translations) && is_array($translations)) {
+            foreach ($translations as $locale => $translation) {
+                $attributes["{$field}_{$locale}"] = $translation;
+            }
+
+            // Remove the original field to avoid redundancy
+            unset($attributes[$field]);
         }
     }
 
