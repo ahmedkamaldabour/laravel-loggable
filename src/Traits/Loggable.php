@@ -393,4 +393,22 @@ trait Loggable
 
         return auth()->user();
     }
+
+    /**
+     * Check if a string is valid JSON.
+     *
+     * This method is made public to be usable outside the trait context.
+     *
+     * @param string $string
+     * @return bool
+     */
+    public function isJson($string): bool
+    {
+        if (!is_string($string)) {
+            return false;
+        }
+
+        json_decode($string);
+        return json_last_error() === JSON_ERROR_NONE;
+    }
 }
