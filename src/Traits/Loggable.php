@@ -204,15 +204,103 @@ trait Loggable
     protected function mapLogAttributes(array $attributes): array
     {
         $mapping = static::$logAttributes ?? [];
+        $result = [];
 
-        return collect($attributes)
-            ->mapWithKeys(static function ($value, $key) use ($mapping) {
-                $newKey = $mapping[$key] ?? $key;
+        // Check if we need to handle translatable fields
+        $hasTranslatable = property_exists($this, 'translatable') && is_array($this->translatable);
 
-                return [$newKey => $value];
-            })
-            ->filter()
-            ->toArray();
+        // Check if we have JSON fields configuration
+        $jsonFields = static::$jsonFields ?? [];
+
+        foreach ($attributes as $key => $value) {
+            // Check if this attribute has a nested mapping in $logAttributes
+            $hasNestedMapping = isset($mapping[$key]) && is_array($mapping[$key]) && !isset($mapping[$key][0]);
+
+            // Determine if this is a JSON field (either a translatable field or explicitly defined as JSON)
+            $isJsonField = ($hasTranslatable && in_array($key, $this->translatable)) ||
+                           in_array($key, $jsonFields) ||
+                           $hasNestedMapping;
+
+            // Process JSON fields
+            if ($isJsonField) {
+                // Convert to array if it's a JSON string
+                $jsonData = $value;
+                if (is_string($value) && $this->isJson($value)) {
+                    $jsonData = json_decode($value, true);
+                }
+
+                if (is_array($jsonData)) {
+                    // If it's a nested mapping (language-specific or JSON structure)
+                    if ($hasNestedMapping) {
+                        foreach ($jsonData as $nestedKey => $nestedValue) {
+                            if (isset($mapping[$key][$nestedKey])) {
+                                // Use the defined label for this nested key
+                                $label = $mapping[$key][$nestedKey];
+                                $result[$label] = $nestedValue;
+                            } else {
+                                // Use a default format for keys not explicitly mapped
+                                $label = ($mapping[$key] ?? $key) . " ({$nestedKey})";
+                                $result[$label] = $nestedValue;
+                            }
+                        }
+                    } else {
+                        // For JSON fields without specific nested mappings
+                        // Format each key-value pair using dot notation or a similar approach
+                        $this->flattenJsonArray($jsonData, $result, $key, $mapping);
+                    }
+                    continue; // Skip the default mapping below
+                }
+            }
+
+            // Standard mapping for non-JSON fields
+            $label = $mapping[$key] ?? $key;
+
+            // Only use the label if it's a string (not an array)
+            if (!is_array($label)) {
+                $result[$label] = $value;
+            } else {
+                // If the label is an array but the value isn't JSON data,
+                // just use the field name as the label
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Recursively flatten a JSON array into dot notation.
+     *
+     * @param array $array The array to flatten
+     * @param array &$result The result array to append to
+     * @param string $prefix The prefix for keys
+     * @param array $mapping Attribute mappings
+     * @param int $depth Current recursion depth
+     * @return void
+     */
+    protected function flattenJsonArray(array $array, array &$result, string $prefix, array $mapping, int $depth = 0): void
+    {
+        // Prevent too deep recursion
+        if ($depth > 3) {
+            $result[$prefix] = json_encode($array);
+            return;
+        }
+
+        foreach ($array as $key => $value) {
+            $newKey = $prefix . '.' . $key;
+
+            // Check if we have a mapping for this specific JSON path
+            $mappedKey = $mapping[$newKey] ?? null;
+
+            if (is_array($value) && !empty($value) && $depth < 3) {
+                // Recursively process nested arrays
+                $this->flattenJsonArray($value, $result, $newKey, $mapping, $depth + 1);
+            } else {
+                // For non-array values or at max depth, add to results
+                $displayKey = $mappedKey ?? $newKey;
+                $result[$displayKey] = $value;
+            }
+        }
     }
 
     /**
